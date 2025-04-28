@@ -1,0 +1,25 @@
+<%- include('layouts/header', { title: 'Your Plan' }) %>
+
+<div class="container mt-5">
+    <h1 class="mb-4">Hello, <%= user.username %>!</h1>
+    <h2 class="mb-4">Here is your personalized training plan:</h2>
+
+    <% if (plans.length === 0) { %>
+    <p>No plan found for your goal and age.</p>
+    <% } else { %>
+    <% plans.forEach(plan => { %>
+    <div class="card mb-4">
+        <div class="card-header">
+            <strong><%= plan.day %> - <%= plan.focus %></strong>
+        </div>
+        <div class="card-body">
+            <p><%= plan.exercises %></p>
+        </div>
+    </div>
+    <% }) %>
+    <% } %>
+
+    <a href="/dashboard" class="btn btn-primary mt-3">Go to Dashboard</a>
+</div>
+
+<%- include('layouts/footer') %>

@@ -1,0 +1,46 @@
+<%- include('layouts/header', { title: 'Your Training Plan' }) %>
+
+<div class="container mt-5">
+    <h1>Your Weight Loss Plan</h1>
+    <p class="lead">Customized for <%= profile.age %> year olds</p>
+
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white">
+            <h3><%= plan.title %></h3>
+        </div>
+        <div class="card-body">
+            <p><%= plan.description %></p>
+
+            <h4 class="mt-4">Weekly Workout Schedule</h4>
+            <div class="table-responsive">
+                <table class="table table-bordered">
+                    <thead class="table-dark">
+                    <tr>
+                        <th>Day</th>
+                        <th>Workout</th>
+                        <th>Duration</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <% const workouts = JSON.parse(plan.workouts); %>
+                    <% workouts.forEach(workout => { %>
+                    <tr>
+                        <td><%= workout.day %></td>
+                        <td><%= workout.name %></td>
+                        <td><%= workout.duration %> minutes</td>
+                    </tr>
+                    <% }); %>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="alert alert-info">
+        <strong>Note:</strong> Combine this plan with a balanced diet for best results.
+    </div>
+
+    <a href="/dashboard" class="btn btn-secondary">Back to Dashboard</a>
+</div>
+
+<%- include('layouts/footer') %>
