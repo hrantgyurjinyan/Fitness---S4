@@ -31,22 +31,34 @@ const pool = mysql.createPool({
   queueLimit: 0
 })
 
-router.get('/', (req, res) => {
-  if (req.session.user) {
-    return res.redirect('/dashboard')
-  }
-  res.render('login', {title: 'Login', error: null, user: null})
+// Helper function to get age group
+const getAgeGroup = (age) => {
+  if (age < 18) return 'teen'
+  if (age > 45) return 'senior'
+  return 'adult'
+}
+
+// Helper function to get user profile
+const getUserProfile = async (userId) => {
+  const [profile] = await pool.execute(
+    'SELECT * FROM user_info WHERE user_id = ?',
+    [userId]
+  )
+  return profile.length ? profile[0] : null
+}
+
+// Routes
+router.get('/', redirectIfAuthenticated, (req, res) => {
+  res.render('login', {
+    title: 'Login',
+    error: null,
+    user: null
+  })
 })
 
-router.get('/login', (req, res) => {
-  if (req.session.user) {
-    return res.redirect('/dashboard')
-  }
-
+router.get('/login', redirectIfAuthenticated, (req, res) => {
   const success = req.session.success
-  if (req.session.success) {
-    delete req.session.success
-  }
+  delete req.session.success
 
   res.render('login', {
     title: 'Login',
@@ -62,21 +74,36 @@ router.post('/login', [
 ], async (req, res) => {
   const errors = validationResult(req)
   if (!errors.isEmpty()) {
-    return res.render('login', {title: 'Login', error: errors.array()[0].msg, user: null})
+    return res.render('login', {
+      title: 'Login',
+      error: errors.array()[0].msg,
+      user: null
+    })
   }
 
   try {
-    const [rows] = await pool.execute('select * from users where username = ?', [req.body.username])
+    const [users] = await pool.execute(
+      'SELECT * FROM users WHERE username = ?',
+      [req.body.username]
+    )
 
-    if (rows.length === 0) {
-      return res.render('login', {title: 'Login', error: 'Invalid username or password', user: null})
+    if (users.length === 0) {
+      return res.render('login', {
+        title: 'Login',
+        error: 'Invalid username or password',
+        user: null
+      })
     }
 
-    const user = rows[0]
+    const user = users[0]
     const isMatch = await bcrypt.compare(req.body.password, user.password)
 
     if (!isMatch) {
-      return res.render('login', {title: 'Login', error: 'Invalid username or password', user: null})
+      return res.render('login', {
+        title: 'Login',
+        error: 'Invalid username or password',
+        user: null
+      })
     }
 
     req.session.user = {
@@ -85,24 +112,40 @@ router.post('/login', [
       email: user.email
     }
 
-    const [profile] = await pool.execute('select * from user_info where user_id = ?', [user.id])
+    const profile = await getUserProfile(user.id)
+    return profile ? res.redirect('/dashboard') : res.redirect('/user-info')
 
-    if (profile.length === 0) {
-      return res.redirect('/user-info')
-    }
-
-    res.redirect('/dashboard')
   } catch (err) {
-    console.error(err)
-    res.render('login', {title: 'Login', error: 'Server error', user: null})
+    console.error('Login error:', err)
+    res.render('login', {
+      title: 'Login',
+      error: 'Server error',
+      user: null
+    })
   }
 })
 
+// Signup Routes
+router.get('/signup', redirectIfAuthenticated, (req, res) => {
+  res.render('signup', {
+    title: 'Sign Up',
+    error: null,
+    success: null,
+    user: null
+  })
+})
 
 router.post('/signup', [
-  body('username').trim().notEmpty().withMessage('Username is required'),
-  body('email').isEmail().withMessage('Valid email is required'),
-  body('password').isLength({min: 6}).withMessage('Password must be at least 6 characters')
+  body('username')
+    .trim()
+    .notEmpty().withMessage('Username is required')
+    .isLength({min: 3}).withMessage('Username must be at least 3 characters'),
+  body('email')
+    .isEmail().withMessage('Valid email is required')
+    .normalizeEmail(),
+  body('password')
+    .isLength({min: 6}).withMessage('Password must be at least 6 characters')
+    .matches(/\d/).withMessage('Password must contain a number')
 ], async (req, res) => {
   const errors = validationResult(req)
   if (!errors.isEmpty()) {
@@ -116,7 +159,7 @@ router.post('/signup', [
 
   try {
     const [existing] = await pool.execute(
-      'select * from users where username = ? or email = ?',
+      'SELECT 1 FROM users WHERE username = ? OR email = ? LIMIT 1',
       [req.body.username, req.body.email]
     )
 
@@ -129,41 +172,41 @@ router.post('/signup', [
       })
     }
 
-    const hashedPassword = await bcrypt.hash(req.body.password, 10)
-
+    const hashedPassword = await bcrypt.hash(req.body.password, 12)
     await pool.execute(
-      'insert into users (username, email, password) values (?, ?, ?)',
+      'INSERT INTO users (username, email, password) VALUES (?, ?, ?)',
       [req.body.username, req.body.email, hashedPassword]
     )
 
+    req.session.success = 'Signup successful! Please login'
+    return res.redirect('/login')
+
+  } catch (err) {
+    console.error('Signup error:', err)
     return res.render('signup', {
       title: 'Sign Up',
-      error: null,
-      success: 'Signup successful! Redirecting to login...',
-      user: null
-    })
-  } catch (err) {
-    console.error(err)
-    res.render('signup', {
-      title: 'Sign Up',
-      error: 'Registration failed',
+      error: 'Registration failed. Please try again.',
       success: null,
       user: null
     })
   }
 })
-router.get('/signup', (req, res) => {
-  if (req.session.user) {
-    return res.redirect('/dashboard')
-  }
-  res.render('signup', {
-    title: 'Sign Up',
-    error: null,
-    success: null,
-    user: null
-  })
-})
 
+// Profile Routes
+router.get('/user-info', requireAuth, async (req, res) => {
+  try {
+    const profile = await getUserProfile(req.session.user.id)
+    res.render('user-info', {
+      title: 'Complete Your Profile',
+      error: null,
+      profile: profile || null
+    })
+  } catch (err) {
+    console.error('Profile load error:', err)
+    req.session.error = 'Error loading profile form'
+    res.redirect('/dashboard')
+  }
+})
 
 router.post('/user-info', requireAuth, [
   body('height').isInt({min: 50, max: 250}).withMessage('Height must be between 50-250 cm'),
@@ -184,7 +227,6 @@ router.post('/user-info', requireAuth, [
     const {height, weight, age, goal} = req.body
     const userId = req.session.user.id
 
-    // Check if profile exists
     const [existing] = await pool.execute(
       'SELECT 1 FROM user_info WHERE user_id = ?',
       [userId]
@@ -202,11 +244,10 @@ router.post('/user-info', requireAuth, [
       )
     }
 
-    // After saving profile, redirect to training plan instead of dashboard
-    res.redirect('/training-plan')
+    return res.redirect('/training-plan')
 
   } catch (err) {
-    console.error(err)
+    console.error('Profile save error:', err)
     res.render('user-info', {
       title: 'Complete Your Profile',
       error: 'Failed to save your information. Please try again.',
@@ -215,28 +256,6 @@ router.post('/user-info', requireAuth, [
   }
 })
 
-
-router.get('/user-info', requireAuth, async (req, res) => {
-  try {
-    // Check if profile already exists
-    const [profile] = await pool.execute(
-      'SELECT * FROM user_info WHERE user_id = ?',
-      [req.session.user.id]
-    )
-
-    res.render('user-info', {
-      title: 'Complete Your Profile',
-      error: null,
-      // Pass existing profile data if available
-      profile: profile.length ? profile[0] : null
-    })
-  } catch (err) {
-    console.error(err)
-    req.session.error = 'Error loading profile form'
-    res.redirect('/dashboard')
-  }
-})
-// GET update-profile page
 router.get('/update-profile', requireAuth, async (req, res) => {
   try {
     // Get user's profile information
@@ -263,53 +282,6 @@ router.get('/update-profile', requireAuth, async (req, res) => {
     res.redirect('/dashboard')
   }
 })
-
-// Add this to your auth.js
-router.get('/training-plan', requireAuth, async (req, res) => {
-  try {
-    // Get user's profile
-    const [profileRows] = await pool.execute(
-      'SELECT age, goal FROM user_info WHERE user_id = ?',
-      [req.session.user.id]
-    )
-
-    if (!profileRows.length) {
-      req.session.error = 'Please complete your profile first'
-      return res.redirect('/user-info')
-    }
-
-    const profile = profileRows[0]
-    let ageGroup = 'adult'
-
-    // Determine age group
-    if (profile.age < 18) ageGroup = 'teen'
-    else if (profile.age > 45) ageGroup = 'senior'
-
-    // Get appropriate training plan
-    const [plans] = await pool.execute(
-      'SELECT * FROM training_plans WHERE goal = ? AND age_group = ?',
-      ['weight_loss', ageGroup]
-    )
-
-    if (!plans.length) {
-      req.session.error = 'No training plan available for your profile'
-      return res.redirect('/dashboard')
-    }
-
-    res.render('training-plan', {
-      title: 'Your Training Plan',
-      user: req.session.user,
-      plan: plans[0],
-      profile
-    })
-
-  } catch (err) {
-    console.error('Training plan error:', err)
-    req.session.error = 'Error loading training plan'
-    res.redirect('/dashboard')
-  }
-})
-
 // POST updated profile
 router.post('/update-profile', requireAuth, [
   body('height').isInt({min: 50, max: 250}).withMessage('Height must be between 50-250 cm'),
@@ -347,49 +319,135 @@ router.post('/update-profile', requireAuth, [
     })
   }
 })
-
-
-router.get('/dashboard', requireAuth, async (req, res) => {
+// Training Plan Routes
+router.get('/training-plan', requireAuth, async (req, res) => {
   try {
-    const [profile] = await pool.execute(
-      'SELECT * FROM user_info WHERE user_id = ?',
-      [req.session.user.id]
-    )
-
-    if (!profile.length) {
+    const profile = await getUserProfile(req.session.user.id)
+    if (!profile) {
       req.session.error = 'Please complete your profile first'
       return res.redirect('/user-info')
     }
 
-    // Get training plan based on profile
-    let ageGroup = 'adult'
-    if (profile[0].age < 18) ageGroup = 'teen'
-    else if (profile[0].age > 45) ageGroup = 'senior'
-
-    const [trainingPlan] = await pool.execute(
-      'SELECT * FROM training_plans WHERE goal = ? AND age_group = ? LIMIT 1',
-      [profile[0].goal, ageGroup]
+    const ageGroup = getAgeGroup(profile.age)
+    const [trainingPlans] = await pool.execute(
+      'SELECT * FROM training_plans WHERE goal = ? AND age_group = ?',
+      [profile.goal, ageGroup]
     )
+
+    if (!trainingPlans.length) {
+      req.session.error = 'No training plan available for your profile'
+      return res.redirect('/dashboard')
+    }
+
+    const [nutritionPlans] = await pool.execute(
+      'SELECT * FROM nutrition_plans WHERE training_plan_id = ?',
+      [trainingPlans[0].id]
+    )
+
+    res.render('training-plan', {
+      title: 'Your Training Plan',
+      user: req.session.user,
+      profile,
+      plan: trainingPlans[0],
+      nutritionPlan: nutritionPlans[0] || null
+    })
+
+  } catch (err) {
+    console.error('Training plan error:', err)
+    req.session.error = 'Error loading training plan'
+    res.redirect('/dashboard')
+  }
+})
+
+// Nutrition Plan Route
+router.get('/nutrition-plan', requireAuth, async (req, res) => {
+  try {
+    const profile = await getUserProfile(req.session.user.id)
+    if (!profile) {
+      req.session.error = 'Please complete your profile first'
+      return res.redirect('/user-info')
+    }
+
+    const ageGroup = getAgeGroup(profile.age)
+    const [trainingPlans] = await pool.execute(
+      'SELECT id FROM training_plans WHERE goal = ? AND age_group = ?',
+      [profile.goal, ageGroup]
+    )
+
+    if (!trainingPlans.length) {
+      req.session.error = 'No training plan available for your profile'
+      return res.redirect('/dashboard')
+    }
+
+    const [nutritionPlans] = await pool.execute(
+      'SELECT * FROM nutrition_plans WHERE training_plan_id = ?',
+      [trainingPlans[0].id]
+    )
+
+    if (!nutritionPlans.length) {
+      req.session.error = 'No nutrition plan available for your profile'
+      return res.redirect('/dashboard')
+    }
+
+    res.render('nutrition-plan', {
+      title: 'Nutrition Plan',
+      user: req.session.user,
+      nutritionPlan: nutritionPlans[0],
+      profile
+    })
+
+  } catch (err) {
+    console.error('Nutrition plan error:', err)
+    req.session.error = 'Error loading nutrition plan'
+    res.redirect('/dashboard')
+  }
+})
+
+
+// Dashboard Route
+router.get('/dashboard', requireAuth, async (req, res) => {
+  try {
+    const profile = await getUserProfile(req.session.user.id)
+    if (!profile) {
+      req.session.error = 'Please complete your profile first'
+      return res.redirect('/user-info')
+    }
+
+    const ageGroup = getAgeGroup(profile.age)
+    const [trainingPlans] = await pool.execute(
+      'SELECT * FROM training_plans WHERE goal = ? AND age_group = ? LIMIT 1',
+      [profile.goal, ageGroup]
+    )
+
+    let nutritionPlan = null
+    if (trainingPlans.length) {
+      const [nutritionPlans] = await pool.execute(
+        'SELECT * FROM nutrition_plans WHERE training_plan_id = ? LIMIT 1',
+        [trainingPlans[0].id]
+      )
+      nutritionPlan = nutritionPlans[0] || null
+    }
 
     res.render('dashboard', {
       title: 'Dashboard',
       user: req.session.user,
-      profile: profile[0],
-      trainingPlan: trainingPlan[0] || null // Ensure we pass null if no plan exists
+      profile,
+      trainingPlan: trainingPlans[0] || null,
+      nutritionPlan
     })
 
   } catch (err) {
-    console.error(err)
+    console.error('Dashboard error:', err)
     req.session.error = 'Error loading dashboard'
     res.redirect('/login')
   }
 })
 
-
+// Logout Route
 router.get('/logout', (req, res) => {
   req.session.destroy(err => {
     if (err) {
-      console.error(err)
+      console.error('Session destruction error:', err)
     }
     res.redirect('/login')
   })
