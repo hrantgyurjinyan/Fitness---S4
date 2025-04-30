@@ -5,7 +5,6 @@ import {body, validationResult} from 'express-validator'
 
 const router = express.Router()
 
-// Authentication Middleware
 const requireAuth = (req, res, next) => {
   if (!req.session.user) {
     req.session.error = 'Please login to access this page'
@@ -31,23 +30,20 @@ const pool = mysql.createPool({
   queueLimit: 0
 })
 
-// Helper function to get age group
 const getAgeGroup = (age) => {
   if (age < 18) return 'teen'
   if (age > 45) return 'senior'
   return 'adult'
 }
 
-// Helper function to get user profile
 const getUserProfile = async (userId) => {
   const [profile] = await pool.execute(
-    'SELECT * FROM user_info WHERE user_id = ?',
-    [userId]
-  )
+    'select * from user_info where user_id = ?',
+    [userId])
+
   return profile.length ? profile[0] : null
 }
 
-// Routes
 router.get('/', redirectIfAuthenticated, (req, res) => {
   res.render('login', {
     title: 'Login',
@@ -83,7 +79,7 @@ router.post('/login', [
 
   try {
     const [users] = await pool.execute(
-      'SELECT * FROM users WHERE username = ?',
+      'select * from users where username = ?',
       [req.body.username]
     )
 
@@ -125,7 +121,6 @@ router.post('/login', [
   }
 })
 
-// Signup Routes
 router.get('/signup', redirectIfAuthenticated, (req, res) => {
   res.render('signup', {
     title: 'Sign Up',
@@ -159,7 +154,7 @@ router.post('/signup', [
 
   try {
     const [existing] = await pool.execute(
-      'SELECT 1 FROM users WHERE username = ? OR email = ? LIMIT 1',
+      'select 1 from users where username = ? or email = ? limit 1',
       [req.body.username, req.body.email]
     )
 
@@ -174,9 +169,8 @@ router.post('/signup', [
 
     const hashedPassword = await bcrypt.hash(req.body.password, 12)
     await pool.execute(
-      'INSERT INTO users (username, email, password) VALUES (?, ?, ?)',
-      [req.body.username, req.body.email, hashedPassword]
-    )
+      'insert into users (username, email, password) values (?, ?, ?)',
+      [req.body.username, req.body.email, hashedPassword])
 
     req.session.success = 'Signup successful! Please login'
     return res.redirect('/login')
@@ -192,7 +186,6 @@ router.post('/signup', [
   }
 })
 
-// Profile Routes
 router.get('/user-info', requireAuth, async (req, res) => {
   try {
     const profile = await getUserProfile(req.session.user.id)
@@ -228,20 +221,18 @@ router.post('/user-info', requireAuth, [
     const userId = req.session.user.id
 
     const [existing] = await pool.execute(
-      'SELECT 1 FROM user_info WHERE user_id = ?',
-      [userId]
-    )
+      'select 1 from user_info where user_id = ?',
+      [userId])
 
     if (existing.length > 0) {
       await pool.execute(
-        'UPDATE user_info SET height = ?, weight = ?, age = ?, goal = ? WHERE user_id = ?',
+        'update user_info set height = ?, weight = ?, age = ?, goal = ? where user_id = ?',
         [height, weight, age, goal, userId]
       )
     } else {
       await pool.execute(
-        'INSERT INTO user_info (user_id, height, weight, age, goal) VALUES (?, ?, ?, ?, ?)',
-        [userId, height, weight, age, goal]
-      )
+        'insert into user_info (user_id, height, weight, age, goal) values (?, ?, ?, ?, ?)',
+        [userId, height, weight, age, goal])
     }
 
     return res.redirect('/training-plan')
@@ -258,11 +249,9 @@ router.post('/user-info', requireAuth, [
 
 router.get('/update-profile', requireAuth, async (req, res) => {
   try {
-    // Get user's profile information
     const [profile] = await pool.execute(
-      'SELECT age, height, weight, goal FROM user_info WHERE user_id = ?',
-      [req.session.user.id]
-    )
+      'select age, height, weight, goal from user_info where user_id = ?',
+      [req.session.user.id])
 
     if (!profile.length) {
       req.session.error = 'Please complete your profile first'
@@ -272,7 +261,7 @@ router.get('/update-profile', requireAuth, async (req, res) => {
     res.render('update-profile', {
       title: 'Update Profile',
       user: req.session.user,
-      profile: profile[0], // Make sure to pass the first profile record
+      profile: profile[0],
       error: null
     })
 
@@ -282,7 +271,7 @@ router.get('/update-profile', requireAuth, async (req, res) => {
     res.redirect('/dashboard')
   }
 })
-// POST updated profile
+
 router.post('/update-profile', requireAuth, [
   body('height').isInt({min: 50, max: 250}).withMessage('Height must be between 50-250 cm'),
   body('weight').isFloat({min: 30, max: 300}).withMessage('Weight must be between 30-300 kg'),
@@ -294,7 +283,7 @@ router.post('/update-profile', requireAuth, [
     return res.render('update-profile', {
       title: 'Update Profile',
       user: req.session.user,
-      profile: req.body, // Pass back the submitted values
+      profile: req.body,
       error: errors.array()[0].msg
     })
   }
@@ -302,9 +291,8 @@ router.post('/update-profile', requireAuth, [
   try {
     const {height, weight, age, goal} = req.body
     await pool.execute(
-      'UPDATE user_info SET height = ?, weight = ?, age = ?, goal = ? WHERE user_id = ?',
-      [height, weight, age, goal, req.session.user.id]
-    )
+      'update user_info set height = ?, weight = ?, age = ?, goal = ? where user_id = ?',
+      [height, weight, age, goal, req.session.user.id])
 
     req.session.success = 'Profile updated successfully!'
     res.redirect('/dashboard')
@@ -319,7 +307,7 @@ router.post('/update-profile', requireAuth, [
     })
   }
 })
-// Training Plan Routes
+
 router.get('/training-plan', requireAuth, async (req, res) => {
   try {
     const profile = await getUserProfile(req.session.user.id)
@@ -330,9 +318,8 @@ router.get('/training-plan', requireAuth, async (req, res) => {
 
     const ageGroup = getAgeGroup(profile.age)
     const [trainingPlans] = await pool.execute(
-      'SELECT * FROM training_plans WHERE goal = ? AND age_group = ?',
-      [profile.goal, ageGroup]
-    )
+      'select * from training_plans where goal = ? and age_group = ?',
+      [profile.goal, ageGroup])
 
     if (!trainingPlans.length) {
       req.session.error = 'No training plan available for your profile'
@@ -340,9 +327,8 @@ router.get('/training-plan', requireAuth, async (req, res) => {
     }
 
     const [nutritionPlans] = await pool.execute(
-      'SELECT * FROM nutrition_plans WHERE training_plan_id = ?',
-      [trainingPlans[0].id]
-    )
+      'select * from nutrition_plans where training_plan_id = ?',
+      [trainingPlans[0].id])
 
     res.render('training-plan', {
       title: 'Your Training Plan',
@@ -359,52 +345,50 @@ router.get('/training-plan', requireAuth, async (req, res) => {
   }
 })
 
-// Nutrition Plan Route
-router.get('/nutrition-plan', requireAuth, async (req, res) => {
-  try {
-    const profile = await getUserProfile(req.session.user.id)
-    if (!profile) {
-      req.session.error = 'Please complete your profile first'
-      return res.redirect('/user-info')
-    }
+// router.get('/nutrition-plan', requireAuth, async (req, res) => {
+//   try {
+//     const profile = await getUserProfile(req.session.user.id)
+//     if (!profile) {
+//       req.session.error = 'Please complete your profile first'
+//       return res.redirect('/user-info')
+//     }
+//
+//     const ageGroup = getAgeGroup(profile.age)
+//     const [trainingPlans] = await pool.execute(
+//       'select id FROM training_plans WHERE goal = ? AND age_group = ?',
+//       [profile.goal, ageGroup]
+//     )
+//
+//     if (!trainingPlans.length) {
+//       req.session.error = 'No training plan available for your profile'
+//       return res.redirect('/dashboard')
+//     }
+//
+//     const [nutritionPlans] = await pool.execute(
+//       'select * FROM nutrition_plans WHERE training_plan_id = ?',
+//       [trainingPlans[0].id]
+//     )
+//
+//     if (!nutritionPlans.length) {
+//       req.session.error = 'No nutrition plan available for your profile'
+//       return res.redirect('/dashboard')
+//     }
+//
+//     res.render('nutrition-plan', {
+//       title: 'Nutrition Plan',
+//       user: req.session.user,
+//       nutritionPlan: nutritionPlans[0],
+//       profile
+//     })
+//
+//   } catch (err) {
+//     console.error('Nutrition plan error:', err)
+//     req.session.error = 'Error loading nutrition plan'
+//     res.redirect('/dashboard')
+//   }
+// })
 
-    const ageGroup = getAgeGroup(profile.age)
-    const [trainingPlans] = await pool.execute(
-      'SELECT id FROM training_plans WHERE goal = ? AND age_group = ?',
-      [profile.goal, ageGroup]
-    )
 
-    if (!trainingPlans.length) {
-      req.session.error = 'No training plan available for your profile'
-      return res.redirect('/dashboard')
-    }
-
-    const [nutritionPlans] = await pool.execute(
-      'SELECT * FROM nutrition_plans WHERE training_plan_id = ?',
-      [trainingPlans[0].id]
-    )
-
-    if (!nutritionPlans.length) {
-      req.session.error = 'No nutrition plan available for your profile'
-      return res.redirect('/dashboard')
-    }
-
-    res.render('nutrition-plan', {
-      title: 'Nutrition Plan',
-      user: req.session.user,
-      nutritionPlan: nutritionPlans[0],
-      profile
-    })
-
-  } catch (err) {
-    console.error('Nutrition plan error:', err)
-    req.session.error = 'Error loading nutrition plan'
-    res.redirect('/dashboard')
-  }
-})
-
-
-// Dashboard Route
 router.get('/dashboard', requireAuth, async (req, res) => {
   try {
     const profile = await getUserProfile(req.session.user.id)
@@ -415,25 +399,24 @@ router.get('/dashboard', requireAuth, async (req, res) => {
 
     const ageGroup = getAgeGroup(profile.age)
     const [trainingPlans] = await pool.execute(
-      'SELECT * FROM training_plans WHERE goal = ? AND age_group = ? LIMIT 1',
-      [profile.goal, ageGroup]
-    )
+      'select * from training_plans where goal = ? and age_group = ? limit 1',
+      [profile.goal, ageGroup])
 
-    let nutritionPlan = null
-    if (trainingPlans.length) {
-      const [nutritionPlans] = await pool.execute(
-        'SELECT * FROM nutrition_plans WHERE training_plan_id = ? LIMIT 1',
-        [trainingPlans[0].id]
-      )
-      nutritionPlan = nutritionPlans[0] || null
-    }
+    // let nutritionPlan = null
+    // if (trainingPlans.length) {
+    //   const [nutritionPlans] = await pool.execute(
+    //     'select * FROM nutrition_plans WHERE training_plan_id = ? LIMIT 1',
+    //     [trainingPlans[0].id]
+    //   )
+    //   nutritionPlan = nutritionPlans[0] || null
+    // }
 
     res.render('dashboard', {
       title: 'Dashboard',
       user: req.session.user,
       profile,
       trainingPlan: trainingPlans[0] || null,
-      nutritionPlan
+//      nutritionPlan
     })
 
   } catch (err) {
@@ -443,7 +426,6 @@ router.get('/dashboard', requireAuth, async (req, res) => {
   }
 })
 
-// Logout Route
 router.get('/logout', (req, res) => {
   req.session.destroy(err => {
     if (err) {
