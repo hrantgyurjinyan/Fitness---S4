@@ -89,7 +89,7 @@ node seed.js
 
 6. Start the server:
 ```bash
-npm start
+npm run dev
 ```
 
 ## Project Structure 📂
