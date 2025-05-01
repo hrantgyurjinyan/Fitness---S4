@@ -27,7 +27,7 @@ A complete fitness application with personalized workout plans based on user pro
 ✔ Input validation  
 
 ## Installation 🚀
-
+```
 1. Clone repo:
 ```bash
 git clone https://github.com/yourusername/fitness-tracker.git
