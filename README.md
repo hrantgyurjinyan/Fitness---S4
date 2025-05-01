@@ -1,5 +1,3 @@
-Here's the complete README.md ready for copy-pasting:
-
 ```markdown
 # Fitness Tracker App 🏋️‍♂️
 
