@@ -127,13 +127,4 @@ fitness-tracker/
 4. Push to the branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
 
-## License 📄
-MIT License - see [LICENSE](LICENSE) for details
 
-```
-
-Just copy this entire content and paste it into your `README.md` file. The formatting will be preserved and all sections will be ready to use! You may want to:
-1. Replace placeholder screenshot URL
-2. Update repository links
-3. Add your own license file
-4. Customize any sections to match your exact implementation
